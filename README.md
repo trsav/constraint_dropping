@@ -8,3 +8,6 @@
 
 1. Download NETLIB LP MPS files
   ```$ bash lp_files/get_all_lp.sh```
+
+#### Requirements
+- A Gurobi license
