@@ -16,9 +16,7 @@ import multiprocessing as mp
 
 logging.getLogger("pyomo.core").setLevel(logging.ERROR)
 
-
 # TODO
-
 # Add warm starting
 # Extension of Boyd
 # ML based on features

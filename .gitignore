@@ -2,6 +2,9 @@ literature/
 slides/
 preprint/
 paper/
+gurobi.lic
+logs.json
+lp_files/uncompress_ms
 .pre-commit-config.yaml
 .flake8
 **/__pycache__
