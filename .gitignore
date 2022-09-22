@@ -4,3 +4,6 @@ preprint/
 paper/
 .pre-commit-config.yaml
 .flake8
+**/__pycache__
+lp_files/compressed_lp
+lp_files/expanded_lp
