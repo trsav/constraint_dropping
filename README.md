@@ -2,6 +2,12 @@
 <img src="https://avatars.githubusercontent.com/u/81195336?s=200&v=4" alt="Optimal PSE logo" title="OptimalPSE" align="right" height="150" />
 </a>
 
-## constraint_dropping
+# Constraint Dropping
 
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) 
+
+1. Download NETLIB LP MPS files
+  ```$ bash lp_files/get_all_lp.sh```
+
+#### Requirements
+- A Gurobi license
