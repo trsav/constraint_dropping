@@ -1,4 +1,5 @@
 cd lp_files
+gcc uncompress_mps.c -o uncompress_mps
 
 cat lp_names | while read lp
 do
@@ -11,5 +12,5 @@ for f in compressed_lp/*
     do
 	echo $f
 
-	./emps $f > expanded_lp/$(basename $f).mps
+	./uncompress_mps $f > expanded_lp/$(basename $f).mps
 done
