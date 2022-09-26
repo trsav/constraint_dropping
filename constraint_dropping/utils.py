@@ -1,4 +1,3 @@
-import time
 import numpy as np
 from pysmps import smps_loader as smps
 import logging
@@ -77,6 +76,7 @@ def parse_matrices(lp):
     else:
         b = lp["rhs"][list(lp["rhs"].keys())[0]]
     c = lp["c"]
+
     return A, b, c
 
 
@@ -127,38 +127,29 @@ def make_cf(j, lp):
         elif type == "G":
             return -s + p[lp["row_names"][j]]
 
-    return cf
+    return [cf, type]
 
 
-def parse_equality_constraints(lp):
+def parse_constraints(lp):
     eq_con_list = []
-    A, b, c = parse_matrices(lp)
-    m = len(b)
-    for j in range(m):
-        if lp["types"][j] == "E":
-            cf = make_cf(j, lp)
-            eq_con_list += [cf]
-    return eq_con_list
-
-
-def parse_ineq_constraints(lp):
     ineq_con_list = []
     A, b, c = parse_matrices(lp)
-    m = len(b)
-    for j in range(m):
-        if lp["types"][j] == "L" or lp["types"][j] == "G":
-            cf = make_cf(j, lp)
+
+    for j in range(len(b)):
+        cf, type = make_cf(j, lp)
+        if type == "E":
+            eq_con_list += [cf]
+        else:
             ineq_con_list += [cf]
-    return ineq_con_list
+
+    return ineq_con_list, eq_con_list
 
 
 def create_lp(path):
-    s = time.time()
     lp = parse_lp(path)
     p = parse_parameters(lp, 5)
     x = parse_variables(lp)
-    eq_con_list = parse_equality_constraints(lp)
-    ineq_con_list = parse_ineq_constraints(lp)
+    ineq_con_list, eq_con_list = parse_constraints(lp)
 
     def obj(x):
         s = 0
@@ -167,21 +158,28 @@ def create_lp(path):
         return s
 
     ineq_dict = {}
+    eq_dict = {}
     type = lp["types"]
-    j = 0
+    jin = 0
+    jeq = 0
     for i in range(len(type)):
         if type[i] != "E":
-            ineq_dict[j] = i
-            j += 1
-    eq_dict = {}
-    j = 0
-    for i in range(len(type)):
-        if type[i] == "E":
-            eq_dict[j] = i
-            j += 1
+            ineq_dict[jin] = i
+            jin += 1
+        else:
+            eq_dict[jeq] = i
+            jeq += 1
 
     cn = lp["col_names"]
     rn = lp["row_names"]
-    e = time.time()
-    print("Time to create LP:", np.round(e - s, 3), "seconds.")
     return x, p, eq_con_list, ineq_con_list, obj, ineq_dict, eq_dict, cn, rn
+
+
+def names_to_list():
+    names = open("lp_files/lp_names", "rb").readlines()
+    for i in range(len(names)):
+        names[i] = str(names[i])
+        names[i] = names[i].split("""b'""")[-1]
+        names[i] = names[i].split(" ")[0]
+        names[i] = names[i].split("""\\""")[0]
+    return names
