@@ -10,3 +10,4 @@ lp_files/uncompress_ms
 **/__pycache__
 lp_files/compressed_lp
 lp_files/expanded_lp
+outputs

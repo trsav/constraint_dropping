@@ -9,11 +9,12 @@ from pyomo.environ import (
     minimize,
     maximize,
 )
-
+import os
+import time
 from prettytable import PrettyTable
 from pyomo.opt import SolverFactory
 import logging
-from utils import create_lp, parse_lp, parse_matrices, names_to_list
+from utils import create_lp, parse_lp, parse_matrices, names_to_list, plot_result
 import multiprocessing as mp
 
 logging.getLogger("pyomo.core").setLevel(logging.ERROR)
@@ -24,7 +25,7 @@ logging.getLogger("pyomo.core").setLevel(logging.ERROR)
 # Cutting planes
 
 names = names_to_list()
-names = ["adlittle"]
+
 
 for case in names:
 
@@ -33,13 +34,30 @@ for case in names:
     info.title = case
     info.field_names = [
         "Iteration",
-        "Number of Robust Constraint Violations",
-        "Percentage of Robust Constraint Violations",
+        "Robust Constraint Violations",
+        "Robust Constraint Violations (%)",
         "Maximum Constraint Violation",
+        "Upper Level Problem Size",
+        "Time (s)",
+        "Time Factor",
     ]
 
     path = "lp_files/expanded_lp/" + case + ".mps"
-    x, p, eq_con_list, ineq_con_list, obj, ineq_dict, eq_dict, cn, rn = create_lp(path)
+    if os.path.getsize(path) > 500000:
+        print("File too large for this analysis \n")
+        continue
+
+    try:
+        x, p, eq_con_list, ineq_con_list, obj, ineq_dict, eq_dict, cn, rn = create_lp(
+            path
+        )
+    except ValueError:
+        print("Error in MPS parsing \n")
+        continue
+    except IndexError:
+        print("Error in MPS parsing \n")
+        continue
+
     if len(ineq_con_list) == 0:
         print(case + " has no inequality constraints... ")
         continue
@@ -53,6 +71,7 @@ for case in names:
     def var_bounds(m, i):
         return (x[i][0], x[i][1])
 
+    s_parse = time.time()
     epsilon = 1e-4
     m_upper = ConcreteModel()
     m_upper.x = Set(initialize=x.keys())
@@ -84,8 +103,10 @@ for case in names:
             m_upper.cons.add(expr=con(m_upper.x_v, p_nominal) == 0)
 
     m_upper.obj = Objective(expr=obj(m_upper.x_v), sense=minimize)
+
     SolverFactory("gurobi").solve(m_upper)
 
+    t_lp = time.time() - s_parse
     x_opt = {}
     for x_name, x_data in m_upper.x_v._data.items():
         x_opt[x_name] = x_data.value
@@ -148,8 +169,8 @@ for case in names:
             )
         else:
             res = []
-            for j in range(len(ineq_con_list)):
-                res.append(solve_subproblem(j, x_opt, p_warm[j]))
+            for ji in range(len(ineq_con_list)):
+                res.append(solve_subproblem(i, x_opt, p_warm[i]))
 
         n_cv = 0
         m_cv = 0
@@ -169,12 +190,25 @@ for case in names:
 
             p_warm[i] = p_opt
 
-        info.add_row([iteration, n_cv, (n_cv / n_c) * 100, m_cv])
+        t_it = time.time() - s_parse
 
+        info.add_row(
+            [
+                iteration,
+                n_cv,
+                (n_cv / n_c) * 100,
+                m_cv,
+                len(m_upper.cons),
+                t_it,
+                t_it / t_lp,
+            ]
+        )
         iteration += 1
 
-        print(info, end="\n")
         if m_cv == 0:
+            info.title = ""
+            with open("outputs/" + case + ".csv", "w") as f:
+                f.write(info.get_csv_string())
             break
 
         SolverFactory("gurobi").solve(m_upper)
@@ -182,3 +216,5 @@ for case in names:
         x_opt = {}
         for x_name, x_data in m_upper.x_v._data.items():
             x_opt[x_name] = x_data.value
+
+plot_result(names)

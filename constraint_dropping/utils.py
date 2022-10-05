@@ -2,6 +2,10 @@ import numpy as np
 from pysmps import smps_loader as smps
 import logging
 from cmath import inf
+from tqdm import tqdm
+import time
+import pandas as pd
+import matplotlib.pyplot as plt
 
 logging.getLogger("pyomo.core").setLevel(logging.ERROR)
 
@@ -43,6 +47,8 @@ def parse_lp(path):
 
     """
     lp_dict = {}
+    print("Reading MPS from", path)
+    s = time.time()
     lp = smps.load_mps(path)
     fields = [
         "name",
@@ -58,6 +64,7 @@ def parse_lp(path):
         "bnd_names",
         "bnd",
     ]
+    print("Successfully read MPS in ", np.round(time.time() - s, 3), " seconds")
     for i in range(len(fields)):
         lp_dict[fields[i]] = lp[i]
 
@@ -86,7 +93,9 @@ def parse_parameters(lp, percentage_uncertainty):
     n = len(c)
     m = len(b)
     p = {}
-    for i in range(n):
+
+    print("Parsing parameters")
+    for i in tqdm(range(n)):
         p[lp["col_names"][i]] = {"val": c[i], "unc": c[i] * pu / 100}
         for j in range(m):
             p[lp["col_names"][i] + "_" + lp["row_names"][j]] = {
@@ -134,7 +143,6 @@ def parse_constraints(lp):
     eq_con_list = []
     ineq_con_list = []
     A, b, c = parse_matrices(lp)
-
     for j in range(len(b)):
         cf, type = make_cf(j, lp)
         if type == "E":
@@ -147,7 +155,7 @@ def parse_constraints(lp):
 
 def create_lp(path):
     lp = parse_lp(path)
-    p = parse_parameters(lp, 5)
+    p = parse_parameters(lp, 1)
     x = parse_variables(lp)
     ineq_con_list, eq_con_list = parse_constraints(lp)
 
@@ -183,3 +191,46 @@ def names_to_list():
         names[i] = names[i].split(" ")[0]
         names[i] = names[i].split("""\\""")[0]
     return names
+
+
+def normalize_vector(x):
+    y = np.zeros_like(x)
+    min_x = min(x)
+    max_x = max(x)
+    for i in range(len(y)):
+        y[i] = 100 * (x[i] - min_x) / (max_x - min_x)
+    return y
+
+
+def plot_result(mps_list):
+    k_list = [
+        "Robust Constraint Violations",
+        "Time (s)",
+        "Maximum Constraint Violation",
+    ]
+    x = "Iteration"
+    fig, axs = plt.subplots(2, len(k_list), figsize=(12, 6))
+    fig.set_constrained_layout(True)
+    if type(mps_list) == str:
+        mps_list = [mps_list]
+    for mps in mps_list:
+        df = pd.read_csv("outputs/" + mps + ".csv")
+        for i in range(len(k_list)):
+            k = k_list[i]
+            axs[0, i].plot(df[x], df[k], c="k")
+
+            k_norm = normalize_vector(df[k])
+            axs[1, i].plot(df[x], k_norm, c="k")
+
+            axs[0, i].set_ylabel(k)
+            axs[1, i].set_ylabel("Normalised " + str(k))
+            for j in range(2):
+                axs[j, i].set_xlabel(x)
+                axs[j, i].set_xticks(df[x], df[x])
+
+    plt.savefig("outputs/all_outputs.png", dpi=600)
+
+    return
+
+
+plot_result(["agg3", "afiro", "agg3", "beaconfd", "25fv47", "adlittle"])
