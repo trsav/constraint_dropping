@@ -16,13 +16,16 @@ from pyomo.opt import SolverFactory
 import logging
 from utils import create_lp, parse_lp, parse_matrices, names_to_list, plot_result
 import multiprocessing as mp
-
+from guppy import hpy
 logging.getLogger("pyomo.core").setLevel(logging.ERROR)
 
 # TODO
 # Extension of Boyd
 # ML based on features
 # Cutting planes
+
+# IMRPROVEMENTS 
+# 1. Sort constraints to be solved by sparsity. Sparse = easier to solve so do it later 
 
 names = names_to_list()
 
@@ -43,12 +46,12 @@ for case in names:
     ]
 
     path = "lp_files/expanded_lp/" + case + ".mps"
-    if os.path.getsize(path) > 500000:
-        print("File too large for this analysis \n")
-        continue
+    # if os.path.getsize(path) > 500000:
+    #     print("File too large for this analysis \n")
+    #     continue
 
     try:
-        x, p, eq_con_list, ineq_con_list, obj, ineq_dict, eq_dict, cn, rn = create_lp(
+        lp,A,b,c,x, p, eq_con_list, ineq_con_list, obj, ineq_dict, eq_dict, cn, rn = create_lp(
             path
         )
     except ValueError:
@@ -61,12 +64,6 @@ for case in names:
     if len(ineq_con_list) == 0:
         print(case + " has no inequality constraints... ")
         continue
-    lp = parse_lp(path)
-    (
-        A,
-        b,
-        c,
-    ) = parse_matrices(lp)
 
     def var_bounds(m, i):
         return (x[i][0], x[i][1])
@@ -108,6 +105,9 @@ for case in names:
 
     t_lp = time.time() - s_parse
     x_opt = {}
+
+    h = hpy()
+    print(h.heap())
     for x_name, x_data in m_upper.x_v._data.items():
         x_opt[x_name] = x_data.value
 
@@ -139,11 +139,11 @@ for case in names:
                 p_opt[p_name] = p[p_name]["val"]
             else:
                 p_opt[p_name] = p_data.value
-
-        if value(m_lower.obj) < epsilon:
+        obj_v = value(m_lower.obj)
+        if obj_v < epsilon:
             return [p_opt]
         else:
-            return [p_opt, value(m_lower.obj)]
+            return [p_opt, obj_v]
 
     p_warm = []
     for i in range(len(ineq_con_list)):
@@ -160,6 +160,8 @@ for case in names:
 
     iteration = 1
 
+    h = hpy()
+    print(h.heap())
     while True:
         if parallel is True:
             pool = mp.Pool(mp.cpu_count() - 2)
@@ -167,11 +169,14 @@ for case in names:
                 solve_subproblem,
                 [(i, x_opt, p_warm[i]) for i in range(len(ineq_con_list))],
             )
+            pool.close()
         else:
             res = []
             for ji in range(len(ineq_con_list)):
                 res.append(solve_subproblem(i, x_opt, p_warm[i]))
 
+        h = hpy()
+        print(h.heap())
         n_cv = 0
         m_cv = 0
 
@@ -203,6 +208,7 @@ for case in names:
                 t_it / t_lp,
             ]
         )
+        print(info)
         iteration += 1
 
         if m_cv == 0:

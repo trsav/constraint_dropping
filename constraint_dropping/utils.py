@@ -150,14 +150,14 @@ def parse_constraints(lp):
         else:
             ineq_con_list += [cf]
 
-    return ineq_con_list, eq_con_list
+    return ineq_con_list, eq_con_list,A,b,c
 
 
 def create_lp(path):
     lp = parse_lp(path)
     p = parse_parameters(lp, 1)
     x = parse_variables(lp)
-    ineq_con_list, eq_con_list = parse_constraints(lp)
+    ineq_con_list, eq_con_list,A,b,c = parse_constraints(lp)
 
     def obj(x):
         s = 0
@@ -180,7 +180,8 @@ def create_lp(path):
 
     cn = lp["col_names"]
     rn = lp["row_names"]
-    return x, p, eq_con_list, ineq_con_list, obj, ineq_dict, eq_dict, cn, rn
+    return lp,A,b,c,x, p, eq_con_list, ineq_con_list, obj, ineq_dict, eq_dict, cn, rn
+
 
 
 def names_to_list():
@@ -233,4 +234,3 @@ def plot_result(mps_list):
     return
 
 
-plot_result(["agg3", "afiro", "agg3", "beaconfd", "25fv47", "adlittle"])
