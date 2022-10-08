@@ -1,4 +1,5 @@
 import numpy as np
+import os
 from pysmps import smps_loader as smps
 import logging
 from cmath import inf
@@ -6,6 +7,11 @@ from tqdm import tqdm
 import time
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib import rc
+
+rc("font", **{"family": "sans-serif", "sans-serif": ["Helvetica"]})
+# rc('font',**{'family':'serif','serif':['Times']})
+# rc('text', usetex=True)
 
 logging.getLogger("pyomo.core").setLevel(logging.ERROR)
 
@@ -97,12 +103,15 @@ def parse_parameters(lp, percentage_uncertainty):
     print("Parsing parameters")
     for i in tqdm(range(n)):
         p[lp["col_names"][i]] = {"val": c[i], "unc": c[i] * pu / 100}
+
         for j in range(m):
+
             p[lp["col_names"][i] + "_" + lp["row_names"][j]] = {
                 "val": A[j, i],
                 "unc": A[j, i] * pu / 100,
             }
     for i in range(m):
+
         p[lp["row_names"][i]] = {"val": b[i], "unc": b[i] * pu / 100}
     return p
 
@@ -128,13 +137,20 @@ def make_cf(j, lp):
     def cf(x, p):
         s = 0
         for i in range(n):
-            s += (
-                p[lp["col_names"][i] + "_" + lp["row_names"][j]] * x[lp["col_names"][i]]
-            )
+            if A[j, i] != 0:
+                s += (
+                    p[lp["col_names"][i] + "_" + lp["row_names"][j]]
+                    * x[lp["col_names"][i]]
+                )
+        if b[j] != 0:
+            b_val = p[lp["row_names"][j]]
+        else:
+            b_val = 0
+
         if type == "E" or type == "L":
-            return s - p[lp["row_names"][j]]
+            return s - b_val
         elif type == "G":
-            return -s + p[lp["row_names"][j]]
+            return -s + b_val
 
     return [cf, type]
 
@@ -144,20 +160,22 @@ def parse_constraints(lp):
     ineq_con_list = []
     A, b, c = parse_matrices(lp)
     for j in range(len(b)):
+        if max(A[j, :]) == 0 and min(A[j, :]) == 0:
+            pass
         cf, type = make_cf(j, lp)
         if type == "E":
             eq_con_list += [cf]
         else:
             ineq_con_list += [cf]
 
-    return ineq_con_list, eq_con_list,A,b,c
+    return ineq_con_list, eq_con_list, A, b, c
 
 
 def create_lp(path):
     lp = parse_lp(path)
     p = parse_parameters(lp, 1)
     x = parse_variables(lp)
-    ineq_con_list, eq_con_list,A,b,c = parse_constraints(lp)
+    ineq_con_list, eq_con_list, A, b, c = parse_constraints(lp)
 
     def obj(x):
         s = 0
@@ -180,8 +198,21 @@ def create_lp(path):
 
     cn = lp["col_names"]
     rn = lp["row_names"]
-    return lp,A,b,c,x, p, eq_con_list, ineq_con_list, obj, ineq_dict, eq_dict, cn, rn
-
+    return (
+        lp,
+        A,
+        b,
+        c,
+        x,
+        p,
+        eq_con_list,
+        ineq_con_list,
+        obj,
+        ineq_dict,
+        eq_dict,
+        cn,
+        rn,
+    )
 
 
 def names_to_list():
@@ -199,38 +230,66 @@ def normalize_vector(x):
     min_x = min(x)
     max_x = max(x)
     for i in range(len(y)):
-        y[i] = 100 * (x[i] - min_x) / (max_x - min_x)
+        y[i] = (x[i] - min_x) / (max_x - min_x)
     return y
 
 
-def plot_result(mps_list):
+def plot_result():
     k_list = [
-        "Robust Constraint Violations",
-        "Time (s)",
+        "Robust Constraint Violations (%)",
         "Maximum Constraint Violation",
+        "Nominal Time Factor",
+        "Upper Level Problem Size",
     ]
     x = "Iteration"
-    fig, axs = plt.subplots(2, len(k_list), figsize=(12, 6))
+    fig, axs = plt.subplots(1, len(k_list), figsize=(12, 3))
     fig.set_constrained_layout(True)
-    if type(mps_list) == str:
-        mps_list = [mps_list]
-    for mps in mps_list:
-        df = pd.read_csv("outputs/" + mps + ".csv")
+    for filename in os.listdir("outputs"):
+        if filename[-3:] != "csv":
+            continue
+        if filename.split("_")[-1].split(".")[0] == "standard":
+
+            col = "k"
+        else:
+            col = "r"
+
+        filename = "outputs/" + filename
+        df = pd.read_csv(filename)
+        total_cons = (
+            df["Upper Level Problem Size"][0] - df["Robust Constraint Violations"][0]
+        )
+
+        if len(df[x]) <= 1:
+            continue
         for i in range(len(k_list)):
+            axs[i].grid(True, alpha=0.3)
             k = k_list[i]
-            axs[0, i].plot(df[x], df[k], c="k")
+            if k != "Time Factor":
+                xp = df[x][:-1]
+                kp = df[k][:-1]
+            else:
+                xp = df[x]
+                kp = df[k]
 
-            k_norm = normalize_vector(df[k])
-            axs[1, i].plot(df[x], k_norm, c="k")
-
-            axs[0, i].set_ylabel(k)
-            axs[1, i].set_ylabel("Normalised " + str(k))
-            for j in range(2):
-                axs[j, i].set_xlabel(x)
-                axs[j, i].set_xticks(df[x], df[x])
-
+            if k == "Upper Level Problem Size":
+                kp = ((kp - total_cons) / total_cons) + 1
+                axs[i].set_ylabel("Normalized Upper Level Problem Size")
+                # kp = normalize_vector(kp)
+                # axs[i].set_ylabel('Normalized '+k)
+            else:
+                axs[i].set_ylabel(k)
+            axs[i].plot(xp, kp, c=col, lw=0.75)
+            # axs[i].set_xlim(1,11)
+            axs[i].set_xlabel(x)
+            # axs[i].set_xticks(x_ticks,x_ticks)
+            if i == 1 or i == 0:
+                xp = xp.values
+                kp = kp.values
+                # axs[i].plot([xp[-1],xp[-1]],[kp[-1],0],c=col,alpha=0.1)
+                axs[i].set_yscale("log")
     plt.savefig("outputs/all_outputs.png", dpi=600)
 
     return
 
 
+plot_result()
