@@ -10,19 +10,27 @@ from pyomo.environ import (
     minimize,
     maximize,
 )
-import os
 import time
 from prettytable import PrettyTable
 from pyomo.opt import SolverFactory
+from utils import plot_result
 from utils import create_lp, names_to_list
 import multiprocessing as mp
 
 # logging.getLogger("pyomo.core").setLevel(logging.ERROR)
 
 # Extension of Boyd
+# Extension of Lubin
+
+# https://web.stanford.edu/~boyd/papers/pdf/prac_robust.pdf
+# https://link.springer.com/content/pdf/10.1007/s10287-015-0236-z.pdf
+
+
 # TODO
-# Instance space analysis
+# Geometric Mean
 # Reformulation
+# Ellipsoid
+# Instance space analysis
 # ML based on features
 # RL?
 
@@ -30,6 +38,7 @@ import multiprocessing as mp
 def run_all():
 
     names = names_to_list()
+    names = ["brandy"]
     for case in names:
 
         print("Starting to solve", case)
@@ -46,9 +55,9 @@ def run_all():
         ]
 
         path = "lp_files/expanded_lp/" + case + ".mps"
-        if os.path.getsize(path) > 1000000:
-            print("File too large for this analysis \n")
-            continue
+        # if os.path.getsize(path) > 1000000:
+        #     print("File too large for this analysis \n")
+        #     continue
 
         try:
             (
@@ -93,12 +102,9 @@ def run_all():
             p_keys = [cn[k] + "_" + rn[ni] for k in range(len(cn))] + [rn[ni]]
             p_keys = [pi for pi in p_keys if p[pi]["val"] != 0]
             p_nominal = {}
-            for i in list(p_keys):
-                p_nominal[i] = p[i]["val"]
-            if len(p_keys) <= 1:
-                pass
-            else:
-                m_upper.cons.add(expr=con(m_upper.x_v, p_nominal) <= 0)
+            for j in list(p_keys):
+                p_nominal[j] = p[j]["val"]
+            m_upper.cons.add(expr=con(m_upper.x_v, p_nominal) <= 0)
 
         for i in range(len(eq_con_list)):
             con = eq_con_list[i]
@@ -106,12 +112,9 @@ def run_all():
             p_keys = [cn[k] + "_" + rn[ni] for k in range(len(cn))] + [rn[ni]]
             p_keys = [pi for pi in p_keys if p[pi]["val"] != 0]
             p_nominal = {}
-            for i in list(p_keys):
-                p_nominal[i] = p[i]["val"]
-            if len(p_keys) <= 1:
-                pass
-            else:
-                m_upper.cons.add(expr=con(m_upper.x_v, p_nominal) == 0)
+            for j in list(p_keys):
+                p_nominal[j] = p[j]["val"]
+            m_upper.cons.add(expr=con(m_upper.x_v, p_nominal) == 0)
 
         m_upper.obj = Objective(expr=obj(m_upper.x_v), sense=minimize)
 
@@ -124,12 +127,13 @@ def run_all():
         if term_con is TerminationCondition.infeasibleOrUnbounded:
             print("Problem is nominally infeasible...")
             continue
-
         t_lp = time.time() - s_parse
         x_opt = {}
 
         for x_name, x_data in m_upper.x_v._data.items():
             x_opt[x_name] = x_data.value
+
+        global solve_subproblem
 
         def solve_subproblem(j, x_opt, warm):
             con = ineq_con_list[j]
@@ -228,6 +232,7 @@ def run_all():
 
             if n_cv == 0:
                 print(info)
+                print("Robust Objective: ", value(m_upper.obj))
                 info.title = ""
                 with open("outputs/" + case + "_standard.csv", "w") as f:
                     f.write(info.get_csv_string())
@@ -248,4 +253,5 @@ def run_all():
                 x_opt[x_name] = x_data.value
 
 
-# run_all()
+run_all()
+plot_result()

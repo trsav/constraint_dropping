@@ -79,6 +79,18 @@ def parse_lp(path):
     for i in range(len(lp_dict["row_names"])):
         lp_dict["row_names"][i] += "_c"
 
+    del_index = []
+    for i in range(len(lp_dict["row_names"])):
+        row = lp_dict["A"][i, :]
+        if max(row) == 0 and min(row) == 0:
+            del_index.append(i)
+    lp_dict["row_names"] = np.delete(lp_dict["row_names"], del_index)
+    lp_dict["A"] = np.delete(lp_dict["A"], del_index, axis=0)
+    lp_dict["types"] = np.delete(lp_dict["types"], del_index)
+    new_rhs = np.delete(
+        np.array(lp_dict["rhs"][list(lp_dict["rhs"].keys())[0]]), del_index
+    )
+    lp_dict["rhs"][list(lp_dict["rhs"].keys())[0]] = new_rhs
     return lp_dict
 
 
@@ -89,6 +101,11 @@ def parse_matrices(lp):
     else:
         b = lp["rhs"][list(lp["rhs"].keys())[0]]
     c = lp["c"]
+    types = lp["types"]
+    for i in range(len(A)):
+        if types[i] == "G":
+            A[i, :] = -A[i, :]
+            b[i] = -b[i]
 
     return A, b, c
 
@@ -147,10 +164,7 @@ def make_cf(j, lp):
         else:
             b_val = 0
 
-        if type == "E" or type == "L":
-            return s - b_val
-        elif type == "G":
-            return -s + b_val
+        return s - b_val
 
     return [cf, type]
 
@@ -159,42 +173,35 @@ def parse_constraints(lp):
     eq_con_list = []
     ineq_con_list = []
     A, b, c = parse_matrices(lp)
+    ineq_dict = {}
+    eq_dict = {}
+    type = lp["types"]
+    jin = 0
+    jeq = 0
     for j in range(len(b)):
-        if max(A[j, :]) == 0 and min(A[j, :]) == 0:
-            pass
         cf, type = make_cf(j, lp)
         if type == "E":
             eq_con_list += [cf]
+            eq_dict[jeq] = j
+            jeq += 1
         else:
             ineq_con_list += [cf]
-
-    return ineq_con_list, eq_con_list, A, b, c
+            ineq_dict[jin] = j
+            jin += 1
+    return ineq_con_list, eq_con_list, A, b, c, ineq_dict, eq_dict
 
 
 def create_lp(path):
     lp = parse_lp(path)
-    p = parse_parameters(lp, 1)
+    p = parse_parameters(lp, 5)
     x = parse_variables(lp)
-    ineq_con_list, eq_con_list, A, b, c = parse_constraints(lp)
+    ineq_con_list, eq_con_list, A, b, c, ineq_dict, eq_dict = parse_constraints(lp)
 
     def obj(x):
         s = 0
         for i in range(len(lp["A"][0, :])):
             s += lp["c"][i] * x[lp["col_names"][i]]
         return s
-
-    ineq_dict = {}
-    eq_dict = {}
-    type = lp["types"]
-    jin = 0
-    jeq = 0
-    for i in range(len(type)):
-        if type[i] != "E":
-            ineq_dict[jin] = i
-            jin += 1
-        else:
-            eq_dict[jeq] = i
-            jeq += 1
 
     cn = lp["col_names"]
     rn = lp["row_names"]
@@ -215,13 +222,62 @@ def create_lp(path):
     )
 
 
+def make_reformulated_cf(j, p, cn, rn, type):
+    n = len(cn)
+
+    def cf_ref(x):
+        s = 0
+        for i in range(n):
+            if p[cn[i] + "_" + rn[j]]["val"] != 0:
+                s += p[cn[i] + "_" + rn[j]]["val"] * x[cn[i]]
+
+        if p[rn[j]]["val"] != 0:
+            b_val = p[rn[j]]["val"]
+        else:
+            b_val = 0
+
+        if type == "E" or type == "L":
+            return s - b_val
+        elif type == "G":
+            return -s + b_val
+
+    return cf_ref
+
+
+def parse_reformulated_constraints(rn, cn, p, types):
+    eq_con_list = []
+    ineq_con_list = []
+    for j in range(len(rn)):
+        cf_ref = make_reformulated_cf(j, p, cn, rn, types[j])
+        if types[j] == "E":
+            eq_con_list += [cf_ref]
+        else:
+            ineq_con_list += [cf_ref]
+    return ineq_con_list, eq_con_list
+
+
+def create_reformulated_lp(path):
+    lp = parse_lp(path)
+    cn = lp["col_names"]
+    rn = lp["row_names"]
+    x = parse_variables(lp)
+    p = parse_parameters(lp, 1)
+    A, b, c = parse_matrices(lp)
+    type = lp["types"]
+    ineq_con_list, eq_con_list = parse_reformulated_constraints(rn, cn, p, type)
+
+    def obj(x):
+        s = 0
+        for i in range(len(cn)):
+            s += c[i] * x[cn[i]]
+        return s
+
+    return x, ineq_con_list, eq_con_list, obj
+
+
 def names_to_list():
-    names = open("lp_files/lp_names", "rb").readlines()
-    for i in range(len(names)):
-        names[i] = str(names[i])
-        names[i] = names[i].split("""b'""")[-1]
-        names[i] = names[i].split(" ")[0]
-        names[i] = names[i].split("""\\""")[0]
+    names = os.listdir("lp_files/expanded_lp")
+    names = [n.split(".")[0] for n in names]
     return names
 
 
@@ -232,6 +288,10 @@ def normalize_vector(x):
     for i in range(len(y)):
         y[i] = (x[i] - min_x) / (max_x - min_x)
     return y
+
+
+def geo_mean(iterable):
+    return np.exp(np.log(iterable).mean())
 
 
 def plot_result():
@@ -287,7 +347,7 @@ def plot_result():
                 kp = kp.values
                 # axs[i].plot([xp[-1],xp[-1]],[kp[-1],0],c=col,alpha=0.1)
                 axs[i].set_yscale("log")
-    plt.savefig("outputs/all_outputs.png", dpi=600)
+    plt.savefig("outputs/all_outputs.png", dpi=100)
 
     return
 
