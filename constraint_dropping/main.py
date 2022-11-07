@@ -1,3 +1,5 @@
+import numpy as np
+
 from pyomo.environ import (
     ConcreteModel,
     Var,
@@ -9,11 +11,12 @@ from pyomo.environ import (
     Objective,
     minimize,
     maximize,
+    Constraint,
 )
+import os
 import time
 from prettytable import PrettyTable
 from pyomo.opt import SolverFactory
-from utils import plot_result
 from utils import create_lp, names_to_list
 import multiprocessing as mp
 
@@ -29,17 +32,29 @@ import multiprocessing as mp
 # TODO
 # Geometric Mean
 # Reformulation
-# Ellipsoid
 # Instance space analysis
 # ML based on features
-# RL?
-
-
-def run_all():
-
-    names = names_to_list()
-    names = ["brandy"]
+# RL
+#
+#
+# prob = [(np.exp(-(gamma[i]**2)/2))*100 for i in range(len(gamma))]
+def run_all(*args):
+    """
+    Type: either 'Box' or 'Ellipse'
+    Prob: decimal probability of constraint violation (see approx of chance)
+    """
+    names = args[0]
+    type = args[1]
+    if type not in ["Box", "Ellipse"]:
+        print("""Type must be either 'box' or 'ellipse'""")
+    if type == "Ellipse":
+        ellipse = True
+        prob = args[2]
+        g = np.sqrt((-2 * np.log(prob)))
+    else:
+        ellipse = False
     for case in names:
+        print(case)
 
         print("Starting to solve", case)
         info = PrettyTable()
@@ -55,9 +70,9 @@ def run_all():
         ]
 
         path = "lp_files/expanded_lp/" + case + ".mps"
-        # if os.path.getsize(path) > 1000000:
-        #     print("File too large for this analysis \n")
-        #     continue
+        if os.path.getsize(path) > 1000000:
+            print("File too large for this analysis \n")
+            continue
 
         try:
             (
@@ -90,7 +105,7 @@ def run_all():
             return (x[i][0], x[i][1])
 
         s_parse = time.time()
-        epsilon = 1e-8
+        epsilon = 1e-5
         m_upper = ConcreteModel()
         m_upper.x = Set(initialize=x.keys())
         m_upper.x_v = Var(m_upper.x, bounds=var_bounds)
@@ -119,6 +134,7 @@ def run_all():
         m_upper.obj = Objective(expr=obj(m_upper.x_v), sense=minimize)
 
         res = SolverFactory("gurobi").solve(m_upper)
+        nominal_obj = value(m_upper.obj)
         term_con = res.solver.termination_condition
         if term_con is TerminationCondition.infeasible:
             print("Problem is nominally infeasible...")
@@ -158,6 +174,18 @@ def run_all():
             m_lower.p = Set(initialize=p_keys)
             m_lower.p_v = Var(m_lower.p, within=Reals, bounds=uncertain_bounds)
             m_lower.obj = Objective(expr=con(x_opt, m_lower.p_v), sense=maximize)
+
+            if ellipse is True:
+                sum_p = 0
+                param_vars = [m_lower.p_v[str(i)] for i in p_keys]
+                upper = [p[str(i)]["val"] + p[i]["unc"] for i in p_keys]
+                lower = [(p[str(i)]["val"] - p[i]["unc"]) for i in p_keys]
+                for i in range(len(param_vars)):
+                    denom = 0.5 * upper[i] - lower[i]
+                    p_n = ((param_vars[i] - lower[i]) / (denom)) - 1
+                    sum_p += p_n**2
+
+                m_lower.ellipse = Constraint(expr=sum_p <= g**2)
 
             for k in p_keys:
                 m_lower.p_v[k].set_value(warm[k])
@@ -232,6 +260,7 @@ def run_all():
 
             if n_cv == 0:
                 print(info)
+                print("Nominal Objective: ", nominal_obj)
                 print("Robust Objective: ", value(m_upper.obj))
                 info.title = ""
                 with open("outputs/" + case + "_standard.csv", "w") as f:
@@ -253,5 +282,9 @@ def run_all():
                 x_opt[x_name] = x_data.value
 
 
-run_all()
-plot_result()
+names = names_to_list()
+run_all(names, "Ellipse", 0.001)
+# run_all_reformulated(names,'Box')
+
+# from reformulation import run_all as run_all_ref
+# run_all_ref()

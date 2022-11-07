@@ -2,20 +2,20 @@ from pyomo.environ import (
     ConcreteModel,
     Var,
     TerminationCondition,
-    Reals,
     value,
     Set,
     ConstraintList,
     Objective,
     minimize,
+    Reals,
     VarList,
+    sqrt,
 )
+import numpy as np
 import os
 from prettytable import PrettyTable
 from pyomo.opt import SolverFactory
-from utils import plot_result
 from utils import parse_lp, parse_variables, parse_matrices
-from utils import names_to_list
 
 
 # logging.getLogger("pyomo.core").setLevel(logging.ERROR)
@@ -36,13 +36,14 @@ from utils import names_to_list
 # RL?
 
 
-def run_all():
-
-    names = names_to_list()
-    names = ["brandy"]
+def run_all_reformulated(*args):
+    names = args[0]
+    type = args[1]
+    if type == "Ellipse":
+        prob = args[2]
+        g = np.sqrt((-2 * np.log(prob)))
     for case in names:
 
-        print("Starting to solve", case)
         info = PrettyTable()
         info.title = case
         info.field_names = [
@@ -76,13 +77,6 @@ def run_all():
         m.x_v = Var(m.x, bounds=var_bounds)
         m.cons = ConstraintList()
 
-        def linear_con(x, a, b, t):
-            s = 0
-            for i in range(len(a)):
-                if a[i] != 0:
-                    s += a[i] * x[cn[i]]
-                return s - b
-
         def linear_eq(x, a, b):
             s = 0
             for j in range(len(a)):
@@ -93,24 +87,47 @@ def run_all():
         m.u = VarList(domain=Reals)
         for i in range(len(rn)):
             if types[i] != "E":
-                s_in = []
-                s = 0
-                for j in range(len(A[i, :])):
-                    if A[i, j] != 0.0:
-                        s_in.append(j)
-                        xv = m.x_v[cn[j]]
-                        u = m.u.add()
-                        s += u
-                        m.cons.add(expr=-u <= (A[i, j] * unc_percen * xv))
-                        m.cons.add(expr=(A[i, j] * unc_percen * xv) <= u)
-                sn = 0
-                xvals = [m.x_v[cn[k]] for k in s_in]
-                avals = [A[i, k] for k in s_in]
-                for k in range(len(s_in)):
-                    sn += xvals[k] * avals[k]
-                m.cons.add(expr=sn + s - b[i] <= 0)
+                if type == "Box":
+                    s_in = []
+                    s = 0
+                    for j in range(len(A[i, :])):
+                        if A[i, j] != 0.0:
+                            s_in.append(j)
+                            xv = m.x_v[cn[j]]
+                            u = m.u.add()
+                            s += u
+                            m.cons.add(expr=-u <= (A[i, j] * unc_percen * xv))
+                            # print(m.cons[len(m.cons)].expr)
+                            m.cons.add(expr=(A[i, j] * unc_percen * xv) <= u)
+                            # print(m.cons[len(m.cons)].expr)
+                    sn = 0
+                    xvals = [m.x_v[cn[k]] for k in s_in]
+                    avals = [A[i, k] for k in s_in]
+                    for k in range(len(xvals)):
+                        sn += xvals[k] * avals[k]
+                    # print(sn+s-b[i])
+                    m.cons.add(expr=sn + s - b[i] <= 0)
 
-                # m.cons.add(expr=linear_con(m.x_v,A[i,:],b[i],types[i]) <= 0)
+                if type == "Ellipse":
+                    soc = 0
+                    s = 0
+                    for j in range(len(A[i, :])):
+                        if A[i, j] != 0.0:
+                            soc += (A[i, j] * unc_percen * m.x_v[cn[j]]) ** 2
+                            s += A[i, j] * m.x_v[cn[j]]
+
+                    lhs = g * sqrt(soc)
+                    rhs = b[i] - s
+                    print("\n")
+                    print(lhs)
+                    print("\n")
+                    # (x,r) where,
+                    # (x1**2 +...xn**2 <= r1**2 +...+rn**2)
+                    print(rhs)
+                    print("\n")
+                    # m.cons.add(expr= lhs <= rhs)
+                    # m.cons.add(expr= kernel.conic.quadratic(b[i]-s,g**2)
+
             if types[i] == "E":
                 m.cons.add(expr=linear_eq(m.x_v, A[i, :], b[i]) == 0)
 
@@ -132,7 +149,7 @@ def run_all():
             print("Problem is nominally infeasible...")
             continue
 
-        print(value(m.obj))
+        print("Robust Objective via reformulation: ", value(m.obj))
         # t_lp = time.time() - s_parse
         # x_opt = {}
 
@@ -140,7 +157,3 @@ def run_all():
         #     x_opt[x_name] = x_data.value
 
         #     t_it = time.time() - s_parse
-
-
-plot_result()
-run_all()

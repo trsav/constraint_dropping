@@ -8,6 +8,10 @@ import time
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib import rc
+import matplotlib
+
+matplotlib.rc("axes", edgecolor="w")
+
 
 rc("font", **{"family": "sans-serif", "sans-serif": ["Helvetica"]})
 # rc('font',**{'family':'serif','serif':['Times']})
@@ -193,9 +197,21 @@ def parse_constraints(lp):
 
 def create_lp(path):
     lp = parse_lp(path)
-    p = parse_parameters(lp, 5)
+    p = parse_parameters(lp, 3)
     x = parse_variables(lp)
     ineq_con_list, eq_con_list, A, b, c, ineq_dict, eq_dict = parse_constraints(lp)
+
+    # A_plot = np.copy(A)
+    # for i in range(len(A_plot[:,0])):
+    #     for j in range(len(A_plot[0,:])):
+    #         if A_plot[i,j] != 0:
+    #             A_plot[i,j] = 1
+    #         else:
+    #             A_plot[i,j] = 0
+
+    # plt.figure()
+    # plt.imshow(A_plot)
+    # plt.savefig('lp_files/sparsity_maps/'+path.split('/')[-1].split('.')[0]+'.png')
 
     def obj(x):
         s = 0
@@ -261,7 +277,7 @@ def create_reformulated_lp(path):
     cn = lp["col_names"]
     rn = lp["row_names"]
     x = parse_variables(lp)
-    p = parse_parameters(lp, 1)
+    p = parse_parameters(lp, 5)
     A, b, c = parse_matrices(lp)
     type = lp["types"]
     ineq_con_list, eq_con_list = parse_reformulated_constraints(rn, cn, p, type)
@@ -302,16 +318,16 @@ def plot_result():
         "Upper Level Problem Size",
     ]
     x = "Iteration"
-    fig, axs = plt.subplots(1, len(k_list), figsize=(12, 3))
+    fig, axs = plt.subplots(1, len(k_list), figsize=(9, 2.5))
     fig.set_constrained_layout(True)
     for filename in os.listdir("outputs"):
         if filename[-3:] != "csv":
             continue
-        if filename.split("_")[-1].split(".")[0] == "standard":
+        # if filename.split("_")[-1].split(".")[0] == "standard":
 
-            col = "k"
-        else:
-            col = "r"
+        #     col = "k"
+        # else:
+        #     col = "r"
 
         filename = "outputs/" + filename
         df = pd.read_csv(filename)
@@ -333,21 +349,24 @@ def plot_result():
 
             if k == "Upper Level Problem Size":
                 kp = ((kp - total_cons) / total_cons) + 1
-                axs[i].set_ylabel("Normalized Upper Level Problem Size")
+                axs[i].set_ylabel("Upper Level Problem Size", c="w")
                 # kp = normalize_vector(kp)
                 # axs[i].set_ylabel('Normalized '+k)
             else:
-                axs[i].set_ylabel(k)
-            axs[i].plot(xp, kp, c=col, lw=0.75)
+                axs[i].set_ylabel(k, c="w")
+            # axs[i].plot(xp, kp, c=col, lw=0.75)
+            axs[i].plot(xp, kp, c="w", lw=1.5)
             # axs[i].set_xlim(1,11)
-            axs[i].set_xlabel(x)
+            axs[i].set_xlabel(x, c="w")
+            axs[i].tick_params(axis="x", colors="w")
+            axs[i].tick_params(axis="y", colors="w")
             # axs[i].set_xticks(x_ticks,x_ticks)
             if i == 1 or i == 0:
                 xp = xp.values
                 kp = kp.values
                 # axs[i].plot([xp[-1],xp[-1]],[kp[-1],0],c=col,alpha=0.1)
                 axs[i].set_yscale("log")
-    plt.savefig("outputs/all_outputs.png", dpi=100)
+    plt.savefig("outputs/all_outputs.png", dpi=800, transparent=True)
 
     return
 

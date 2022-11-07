@@ -11,4 +11,4 @@ module load anaconda3/personal
 cd $PBS_O_WORKDIR
 conda env create -f environment.yml 
 source activate constraint_dropping
-python3 constraint_dropping/main.py HPC
+python3 constraint_dropping/main.py

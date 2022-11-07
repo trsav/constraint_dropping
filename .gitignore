@@ -11,3 +11,4 @@ lp_files/uncompress_ms
 lp_files/compressed_lp
 lp_files/expanded_lp
 outputs
+constraint_dropping/heat_pump_problem.py
